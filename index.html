@@ -1,0 +1,300 @@
+<!DOCTYPE html><html>
+<head>
+  <title>Othello AI with Minimax, Undo, Redo & Analyzer</title>
+  <style>
+    table { border-collapse: collapse; }
+    td {
+      width: 50px; height: 50px;
+      border: 1px solid black;
+      text-align: center;
+      font-size: 30px;
+      cursor: pointer;
+    }
+    .valid { background-color: red; }
+    .highlight-good { background-color: green; }
+    .highlight-bad { background-color: orange; }
+    #controls { margin-bottom: 10px; }
+  </style>
+</head>
+<body><div id="controls">
+  <label>Black:
+    <select id="blackType">
+      <option value="HUMAN">Human</option>
+      <option value="AI">AI</option>
+    </select>
+  </label>
+  <label>White:
+    <select id="whiteType">
+      <option value="HUMAN">Human</option>
+      <option value="AI">AI</option>
+    </select>
+  </label>
+  <label>AI Mode:
+    <select id="aiMode">
+      <option value="random">Random</option>
+      <option value="greedy">Greedy (Most flips)</option>
+      <option value="minimax">Smart (Minimax)</option>
+    </select>
+  </label>
+  <button onclick="startGame()">Start Game</button>
+  <button onclick="undoMove()">Undo</button>
+  <button onclick="redoMove()">Redo</button>
+</div><h2 id="turnDisplay">Turn: ⚫ Black</h2>
+<div id="moveHistory"></div>
+<table id="board"></table><script>
+const SIZE = 8;
+const EMPTY = '', BLACK = 'B', WHITE = 'W';
+let board, history = [], redoStack = [], moveList = [];
+let currentPlayer = BLACK;
+let playerType = {};
+
+const directions = [
+  [-1, 0], [1, 0], [0, -1], [0, 1],
+  [-1, -1], [-1, 1], [1, -1], [1, 1]
+];
+
+function cloneBoard(b) {
+  return b.map(row => row.slice());
+}
+
+function startGame() {
+  board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+  board[3][3] = BLACK; board[3][4] = WHITE;
+  board[4][3] = WHITE; board[4][4] = BLACK;
+  history = [];
+  redoStack = [];
+  moveList = [];
+  document.getElementById("moveHistory").innerHTML = '';
+
+  playerType = {
+    B: document.getElementById("blackType").value,
+    W: document.getElementById("whiteType").value
+  };
+
+  currentPlayer = BLACK;
+  renderBoard();
+}
+
+function renderBoard() {
+  const table = document.getElementById('board');
+  table.innerHTML = '';
+  document.getElementById('turnDisplay').innerText = `Turn: ${currentPlayer === BLACK ? '⚫ Black' : '⚪ White'}`;
+
+  let moves = getValidMoves(board, currentPlayer);
+  const bestMove = getBestMove(moves, currentPlayer);
+  const worstMove = getWorstMove(moves, currentPlayer);
+
+  for (let row = 0; row < SIZE; row++) {
+    const tr = document.createElement('tr');
+    for (let col = 0; col < SIZE; col++) {
+      const td = document.createElement('td');
+      const cell = board[row][col];
+
+      if (cell === BLACK) td.innerHTML = '⚫';
+      else if (cell === WHITE) td.innerHTML = '⚪';
+
+      if (isValidMove(board, row, col, currentPlayer)) {
+        td.innerHTML = '●';
+        td.classList.add('valid');
+        if (bestMove && bestMove[0] === row && bestMove[1] === col)
+          td.classList.add('highlight-good');
+        if (worstMove && worstMove[0] === row && worstMove[1] === col)
+          td.classList.add('highlight-bad');
+
+        if (playerType[currentPlayer] === "HUMAN") {
+          td.onclick = () => {
+            history.push(cloneBoard(board));
+            redoStack = [];
+            moveList.push(`${currentPlayer === BLACK ? '⚫' : '⚪'} ${String.fromCharCode(65 + col)}${row + 1}`);
+            updateMoveHistory();
+            makeMove(board, row, col, currentPlayer);
+            switchTurn();
+          };
+        }
+      }
+
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+
+  if (moves.length === 0) {
+    setTimeout(() => {
+      alert(`${currentPlayer === BLACK ? '⚫ Black' : '⚪ White'} has no valid moves. Skipping turn.`);
+      switchTurn();
+    }, 200);
+    return;
+  }
+
+  if (playerType[currentPlayer] === "AI") {
+    setTimeout(() => aiPlay(currentPlayer), 500);
+  }
+}
+
+function getValidMoves(b, color) {
+  let moves = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (isValidMove(b, r, c, color)) moves.push([r, c]);
+    }
+  }
+  return moves;
+}
+
+function isValidMove(b, r, c, color) {
+  if (b[r][c] !== EMPTY) return false;
+  const opponent = color === BLACK ? WHITE : BLACK;
+  for (let [dr, dc] of directions) {
+    let i = r + dr, j = c + dc, found = false;
+    while (i >= 0 && i < SIZE && j >= 0 && j < SIZE && b[i][j] === opponent) {
+      i += dr; j += dc; found = true;
+    }
+    if (found && i >= 0 && i < SIZE && j >= 0 && j < SIZE && b[i][j] === color)
+      return true;
+  }
+  return false;
+}
+
+function makeMove(b, r, c, color) {
+  const opponent = color === BLACK ? WHITE : BLACK;
+  b[r][c] = color;
+  for (let [dr, dc] of directions) {
+    let i = r + dr, j = c + dc, path = [];
+    while (i >= 0 && i < SIZE && j >= 0 && j < SIZE && b[i][j] === opponent) {
+      path.push([i, j]); i += dr; j += dc;
+    }
+    if (i >= 0 && i < SIZE && j >= 0 && j < SIZE && b[i][j] === color) {
+      for (let [x, y] of path) b[x][y] = color;
+    }
+  }
+}
+
+function evaluateBoard(b, color) {
+  let count = 0;
+  for (let row of b) {
+    for (let cell of row) {
+      if (cell === color) count++;
+    }
+  }
+  return count;
+}
+
+function minimax(b, depth, color, maximizing) {
+  const moves = getValidMoves(b, color);
+  const opponent = color === BLACK ? WHITE : BLACK;
+  if (depth === 0 || moves.length === 0) return evaluateBoard(b, color);
+
+  if (maximizing) {
+    let maxEval = -Infinity;
+    for (let [r, c] of moves) {
+      let clone = cloneBoard(b);
+      makeMove(clone, r, c, color);
+      let eval = minimax(clone, depth - 1, opponent, false);
+      maxEval = Math.max(maxEval, eval);
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (let [r, c] of moves) {
+      let clone = cloneBoard(b);
+      makeMove(clone, r, c, color);
+      let eval = minimax(clone, depth - 1, opponent, true);
+      minEval = Math.min(minEval, eval);
+    }
+    return minEval;
+  }
+}
+
+function aiPlay(color) {
+  let moves = getValidMoves(board, color);
+  if (moves.length === 0) return;
+
+  const mode = document.getElementById("aiMode").value;
+  let move;
+  if (mode === "greedy") {
+    move = getBestMove(moves, color);
+  } else if (mode === "minimax") {
+    let bestScore = -Infinity;
+    for (let [r, c] of moves) {
+      let testBoard = cloneBoard(board);
+      makeMove(testBoard, r, c, color);
+      let score = minimax(testBoard, 2, color, false);
+      if (score > bestScore) {
+        bestScore = score;
+        move = [r, c];
+      }
+    }
+  } else {
+    move = moves[Math.floor(Math.random() * moves.length)];
+  }
+  history.push(cloneBoard(board));
+  redoStack = [];
+  moveList.push(`${color === BLACK ? '⚫' : '⚪'} ${String.fromCharCode(65 + move[1])}${move[0] + 1}`);
+  updateMoveHistory();
+  makeMove(board, move[0], move[1], color);
+  switchTurn();
+}
+
+function getBestMove(moves, color) {
+  let max = -1, best = null;
+  for (let [r, c] of moves) {
+    let flips = countFlips(r, c, color);
+    if (flips > max) { max = flips; best = [r, c]; }
+  }
+  return best;
+}
+
+function getWorstMove(moves, color) {
+  let min = 999, worst = null;
+  for (let [r, c] of moves) {
+    let flips = countFlips(r, c, color);
+    if (flips < min) { min = flips; worst = [r, c]; }
+  }
+  return worst;
+}
+
+function countFlips(r, c, color) {
+  let total = 0;
+  const opponent = color === BLACK ? WHITE : BLACK;
+  for (let [dr, dc] of directions) {
+    let i = r + dr, j = c + dc, path = [];
+    while (i >= 0 && i < SIZE && j >= 0 && j < SIZE && board[i][j] === opponent) {
+      path.push([i, j]); i += dr; j += dc;
+    }
+    if (i >= 0 && i < SIZE && j >= 0 && j < SIZE && board[i][j] === color) total += path.length;
+  }
+  return total;
+}
+
+function switchTurn() {
+  currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+  renderBoard();
+}
+
+function undoMove() {
+  if (history.length > 0) {
+    redoStack.push(cloneBoard(board));
+    board = history.pop();
+    moveList.pop();
+    updateMoveHistory();
+    switchTurn();
+  } else alert("Nothing to undo.");
+}
+
+function redoMove() {
+  if (redoStack.length > 0) {
+    history.push(cloneBoard(board));
+    board = redoStack.pop();
+    moveList.push("(Redo)");
+    updateMoveHistory();
+    switchTurn();
+  } else alert("Nothing to redo.");
+}
+
+function updateMoveHistory() {
+  document.getElementById("moveHistory").innerHTML = "<strong>Moves:</strong> " + moveList.join(', ');
+}
+
+startGame();
+</script></body>
+</html>
